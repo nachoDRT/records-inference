@@ -1,4 +1,8 @@
 import os
+import sys
+from pathlib import Path
+sys.path.append(os.path.join(str(Path(os.path.abspath(__file__)).parent.parent), "9_Transformers_Git", "transformers", "src"))
+
 from transformers import AutoModelForTokenClassification, LayoutLMv2FeatureExtractor
 import cv2
 from PIL import Image
@@ -179,6 +183,23 @@ def generate_json(*, json_path: str, json_number: str, dict: dict):
         outfile.write(json_object)
 
     outfile.close()
+
+def get_line_id(line_2_bbox: dict, bbox: list):
+    
+    bbox = str(bbox)
+    for item in line_2_bbox:
+        if bbox in item['bboxes']:
+            return int(item['line_id'])
+
+    return None
+
+def unnormalize_bboxes_in_line_2_bbox(line_2_bbox: dict):
+
+    for item in line_2_bbox:
+        item['bboxes'] = [str(unnormalize_box(eval(bbox), width, height)) for bbox in item['bboxes']]
+
+    return line_2_bbox
+
 
 def postprocess_outputs(detected_subjects: list, grades_tags: list, grades: list, confidences: list, output_num: int):
 
@@ -388,7 +409,6 @@ model = AutoModelForTokenClassification.from_pretrained(os.getcwd())
 model.to(device)
 
 feature_extractor = LayoutLMv2FeatureExtractor(ocr_lang="spa")
-print("hola")
 
 real_docs_path = os.path.join(os.getcwd(), "test_set")
 
@@ -415,8 +435,8 @@ for file in sorted(os.listdir(real_docs_path)):
         words_bboxes = inputs['boxes']
         width, height = img.size
         words_bboxes = [unnormalize_box(box, width, height) for box in words_bboxes[0]]
-        print(words_bboxes[0])
         conf = inputs["conf"]
+        line_2_bbox = unnormalize_bboxes_in_line_2_bbox(inputs["line_2_bbox"])
         
         if OCR_SPY:
             ocr_img = copy.deepcopy(img)
@@ -459,8 +479,6 @@ for file in sorted(os.listdir(real_docs_path)):
         # Convert tuples back to lists
         true_boxes = [list(t) for t in new_list]
 
-        print(true_boxes[0])
-
         img = cv2.cvtColor(np.asarray(img), cv2.COLOR_BGR2RGB)
         
         # draw = ImageDraw.Draw(img)
@@ -470,6 +488,7 @@ for file in sorted(os.listdir(real_docs_path)):
         grades = []
         detected_subjects = []
         confidences = []
+        lines_with_detected_subjects = []
 
         for index, (prediction, box) in enumerate(zip(true_predictions, true_boxes)):
         
@@ -477,8 +496,9 @@ for file in sorted(os.listdir(real_docs_path)):
             # XXX
             # string = "".join([str(index).zfill(4), " ", words[0][index].ljust(35), " ", str(true_boxes[index]).ljust(85), " ", predicted_label])
             # print(string)
+            detection_line = get_line_id(line_2_bbox, box)
 
-            if predicted_label in answers_list:
+            if predicted_label in answers_list and detection_line not in lines_with_detected_subjects:
                 
                 preprocessed = re.sub(",", ".",  words[0][index])
                 preprocessed = re.sub("[^0-9]", "", preprocessed)
@@ -493,8 +513,9 @@ for file in sorted(os.listdir(real_docs_path)):
                     grades.append(grade)
                     confidences.append(conf[0][index])
                     detected_subjects.append(predicted_label[:-7])
+                    lines_with_detected_subjects.append(detection_line)
 
-                except ValueError:           
+                except ValueError:
                     pass
 
             start_point = (int(box[0]), int(box[1]))
@@ -504,17 +525,9 @@ for file in sorted(os.listdir(real_docs_path)):
             color = label2color[predicted_label]
             img = cv2.rectangle(img, start_point, end_point, color, 2)
             img = cv2.putText(img, predicted_label, text_xy, font, font_scale, color, 1, cv2.LINE_AA)
-
+        
         img_name = "".join(['result_', str(iter), '.png'])
         cv2.imwrite(img_name, img)
-
-        print(detected_subjects)
-        print(a)
-        # TODO Instead of producing an unique-key-element list, allow the raw "detected_subjects" list
-        # to go to "postprocess_outputs" and associate subjects and grades there. How are we going to 
-        # treat several chunks:
-        # lengua castellana y literatura -> [lengua_castellana_4_de_la_eso, lengua_castellana_4_de_la_eso, lengua_castellana_4_de_la_eso, lengua_castellana_4_de_la_eso]
-        detected_subjects = list(dict.fromkeys(detected_subjects))
     
         grades_output = postprocess_outputs(detected_subjects, grades_tags, grades, confidences, iter)
 
