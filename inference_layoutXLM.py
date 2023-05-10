@@ -214,21 +214,36 @@ def postprocess_outputs(detected_subjects: list, grades_tags: list, grades: list
         
         try:
             subject = detected_subjects[i]
-            expected_tag = "".join([subject, "_answer"])
-            subjects_dict[subject] = {}
-            subjects_dict[subject]["grade"] = grade
-            subjects_dict[subject]["OCR_confindence"] = confidences[i]
-            
-            if grades_tags[i] == expected_tag:
-                subjects_dict[subject]["question_answer_confidence"] = "high_confidence"
-            
-            else:
+
+            # Check if this subject already has a record
+            if subject in subjects_dict:
+
+                if type(subjects_dict[subject]["grade"]) == float:
+                    grades_list = [subjects_dict[subject]["grade"]]
+                    ocr_confidences_list = [subjects_dict[subject]["OCR_confindence"]]
+                    subject_2_grade_confidence_list = [subjects_dict[subject]["question_answer_confidence"]]
+
                 
-                """    
-                TODO 'medium_confidence' is now based on OCR order output, but this should be
-                improved and be based on geometry (minimum distnance)
-                """
-                subjects_dict[subject]["question_answer_confidence"] = "medium_confidence"
+                else:
+                    grades_list = subjects_dict[subject]["grade"]
+                    ocr_confidences_list = subjects_dict[subject]["OCR_confindence"]
+                    subject_2_grade_confidence_list = subjects_dict[subject]["question_answer_confidence"]
+
+                grades_list.append(grade)
+                subjects_dict[subject]["grade"] =  grades_list
+                
+                ocr_confidences_list.append(confidences[i])
+                subjects_dict[subject]["OCR_confindence"] = ocr_confidences_list
+
+                subject_2_grade_confidence_list.append(get_subject_2_grade_confidence(grades_tags[i], expected_tag))
+                subjects_dict[subject]["question_answer_confidence"] = subject_2_grade_confidence_list
+                
+            else:
+                expected_tag = "".join([subject, "_answer"])
+                subjects_dict[subject] = {}
+                subjects_dict[subject]["grade"] = grade
+                subjects_dict[subject]["OCR_confindence"] = confidences[i]
+                subjects_dict[subject]["question_answer_confidence"] = get_subject_2_grade_confidence(grades_tags[i], expected_tag)
         
         except IndexError:
 
@@ -238,6 +253,19 @@ def postprocess_outputs(detected_subjects: list, grades_tags: list, grades: list
 
     return subjects_dict
 
+def get_subject_2_grade_confidence(grade_tag, expected_tag):
+
+    if grade_tag == expected_tag:
+        subject_2_grade_confidence = "high_confidence"
+
+    else:
+        """    
+        TODO 'medium_confidence' is now based on OCR order output, but this should be
+        improved and be based on geometry (minimum distnance)
+        """
+        subject_2_grade_confidence = "medium_confidence"
+
+    return subject_2_grade_confidence
 
 def open_ground_truth_json(*, path):
 
