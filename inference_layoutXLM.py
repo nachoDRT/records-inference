@@ -296,20 +296,47 @@ def check_ground_truth(*, grades_dict, json_path):
 
     for key in ground_truth_dict:
         
-        num_gt_grades += 1
         subject = key
         gt_subject_grade = ground_truth_dict[subject]["grade"]
 
-        try:
-            predicted_subject_grade = grades_dict[subject]["grade"]
+        if type(gt_subject_grade) == float or type(gt_subject_grade) == int:
 
-            if gt_subject_grade - predicted_subject_grade != 0:
+            num_gt_grades += 1
 
-                num_mistakes += 1
-        
-        except KeyError:
+            try:
+                predicted_subject_grade = grades_dict[subject]["grade"]
 
-            num_mistakes +=1
+                if gt_subject_grade - predicted_subject_grade != 0:
+
+                    num_mistakes += 1
+            
+            except KeyError:
+
+                num_mistakes +=1
+
+        else:
+
+            num_gt_grades += len(gt_subject_grade)
+
+            try:
+                predicted_subject_grades = grades_dict[subject]["grade"]
+
+                # TODO Still not tested functionality
+
+                for predicted_subject_grade in predicted_subject_grades:
+                    correct_detection_flag = False
+
+                    for gt_grade in gt_subject_grade:
+                        if gt_grade - predicted_subject_grade == 0:
+                            gt_subject_grade.pop(gt_grade)
+                            correct_detection_flag = True
+
+                    if correct_detection_flag == False:
+                        num_mistakes += 1
+            
+            except KeyError:
+
+                num_mistakes += len(gt_subject_grade)
 
     return num_mistakes, num_gt_grades
 
