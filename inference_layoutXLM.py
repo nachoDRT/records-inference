@@ -58,8 +58,13 @@ def highlight_ocr_detections(*, img: Image.Image, iter: int, words: list, words_
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
 
-    img_name = "".join(['OCR_detection', str(iter), '.png'])
-    cv2.imwrite(img_name, img=img)
+    img_name = "".join(['ocr_detection', str(iter), '.png'])
+    save_img_path = os.path.join(os.getcwd(), "ocr_detections")
+
+    if not os.path.isdir(save_img_path):
+        os.mkdir(save_img_path)
+
+    cv2.imwrite(os.path.join(save_img_path, img_name), img=img)
 
 
 def get_label_2_color():
@@ -205,11 +210,6 @@ def postprocess_outputs(detected_subjects: list, grades_tags: list, grades: list
 
     subjects_dict = {}
 
-    print("GRADES:")
-    print(grades)
-    print("")
-    print(detected_subjects)
-
     for i, grade in enumerate(grades):
         
         try:
@@ -248,8 +248,10 @@ def postprocess_outputs(detected_subjects: list, grades_tags: list, grades: list
         except IndexError:
 
             break
+    
+    save_results_path = os.path.join(os.getcwd(), "results")
 
-    generate_json(json_path=os.getcwd(), json_number=str(output_num), dict=subjects_dict)
+    generate_json(json_path=save_results_path, json_number=str(output_num), dict=subjects_dict)
 
     return subjects_dict
 
@@ -302,41 +304,50 @@ def check_ground_truth(*, grades_dict, json_path):
         if type(gt_subject_grade) == float or type(gt_subject_grade) == int:
 
             num_gt_grades += 1
+            gt_subject_grade = [gt_subject_grade]
 
-            try:
-                predicted_subject_grade = grades_dict[subject]["grade"]
+            # try:
+            #     predicted_subject_grade = grades_dict[subject]["grade"]
 
-                if gt_subject_grade - predicted_subject_grade != 0:
+            #     if gt_subject_grade - predicted_subject_grade != 0:
 
-                    num_mistakes += 1
+            #         num_mistakes += 1
             
-            except KeyError:
+            # except KeyError:
 
-                num_mistakes +=1
+            #     num_mistakes +=1
 
         else:
 
             num_gt_grades += len(gt_subject_grade)
 
-            try:
-                predicted_subject_grades = grades_dict[subject]["grade"]
+        try:
+            predicted_subject_grades = grades_dict[subject]["grade"]
 
-                # TODO Still not tested functionality
+            # TODO Still not tested functionality
+            if type(predicted_subject_grades) == float or type(predicted_subject_grades) == int:
+                predicted_subject_grades = [predicted_subject_grades]
 
-                for predicted_subject_grade in predicted_subject_grades:
-                    correct_detection_flag = False
+            for predicted_subject_grade in predicted_subject_grades:
+                correct_detection_flag = False
 
-                    for gt_grade in gt_subject_grade:
-                        if gt_grade - predicted_subject_grade == 0:
-                            gt_subject_grade.pop(gt_grade)
+                for gt_grade in gt_subject_grade:
+                    if gt_grade - predicted_subject_grade == 0:
+                        
+                        try:
+                            gt_subject_grade.remove(gt_grade)
                             correct_detection_flag = True
+                        
+                        except IndexError:
+                            correct_detection_flag = False
+                            break
 
-                    if correct_detection_flag == False:
-                        num_mistakes += 1
-            
-            except KeyError:
+                if correct_detection_flag == False:
+                    num_mistakes += 1
+        
+        except KeyError:
 
-                num_mistakes += len(gt_subject_grade)
+            num_mistakes += len(gt_subject_grade)
 
     return num_mistakes, num_gt_grades
 
@@ -355,7 +366,7 @@ def generate_plot(*, stats: np.array, path: str):
     ax.set_xticks(bins + 0.5)
     ax.set_xticklabels(bins.astype(int))
     # TODO Write '3 or more' mistakes as 'xtic' label
-    plt.savefig(os.path.join(Path(path).parent, "performance_histogram.png"))
+    plt.savefig(os.path.join(path, "performance_histogram.png"))
     plt.close()
 
 
@@ -394,7 +405,7 @@ def generate_aggregated_metrics(*, errors: int, total: int, path: str):
     plt.text(0.5, 0.5, 'Accuracy:\n{}%'.format(percentage), 
         ha='center', va='center', transform=plt.gcf().transFigure, fontsize=14)
 
-    plt.savefig(os.path.join(Path(path).parent, "aggregated_performance.png"))
+    plt.savefig(os.path.join(path, "aggregated_performance.png"))
     plt.close()
 
 
@@ -465,7 +476,7 @@ model.to(device)
 
 feature_extractor = LayoutLMv2FeatureExtractor(ocr_lang="spa")
 
-real_docs_path = os.path.join(os.getcwd(), "test_set")
+real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "test_set")
 
 iter = 0
 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -581,7 +592,13 @@ for file in sorted(os.listdir(real_docs_path)):
             img = cv2.rectangle(img, start_point, end_point, color, 2)
             img = cv2.putText(img, predicted_label, text_xy, font, font_scale, color, 1, cv2.LINE_AA)
         
+        save_results_path = os.path.join(os.getcwd(), "results")
+
+        if not os.path.isdir(save_results_path):
+            os.mkdir(save_results_path)
+
         img_name = "".join(['result_', str(iter), '.png'])
+        img_name = os.path.join(save_results_path, img_name)
         cv2.imwrite(img_name, img)
     
         grades_output = postprocess_outputs(detected_subjects, grades_tags, grades, confidences, iter)
@@ -592,7 +609,7 @@ for file in sorted(os.listdir(real_docs_path)):
             num_errors, num_gt_grades = check_ground_truth(grades_dict=grades_output, json_path=img_path)
             total_errors += num_errors
             total_gt_grades += num_gt_grades
-            errors_string = "".join(["File num.", str(iter).zfill(4), " errors: ", str(num_errors)])
+            errors_string = "".join(["File num.", str(iter).zfill(4), " errors: ", str(num_errors), "/", str(num_gt_grades)])
             print(errors_string)
             documents_stats.append(num_errors)
 
@@ -624,8 +641,8 @@ for file in sorted(os.listdir(real_docs_path)):
     
 
 postproc_docs_stats = postprocess_docs_stats(stats=documents_stats)
-generate_plot(stats=postproc_docs_stats, path=real_docs_path)
-generate_aggregated_metrics(errors=total_errors, total=total_gt_grades, path=real_docs_path)
+generate_plot(stats=postproc_docs_stats, path=save_results_path)
+generate_aggregated_metrics(errors=total_errors, total=total_gt_grades, path=save_results_path)
 
 if SEND_TO_DATABASE:
 
