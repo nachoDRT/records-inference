@@ -22,9 +22,15 @@ import numpy as np
 
 from transformers import TrainingArguments, Trainer
 
+F_TO_EVALUATE = 250
+TOTAL_STEPS = 10000
+
+torch.cuda.empty_cache()
+
 # Load dataset using a '.py' file
 py_file_path = os.path.join(os.path.dirname(os.getcwd()), '3_Datasets', 'xfunsd.py')
 dataset = load_dataset(py_file_path, 'xfun_es')
+dataset.shuffle()
 
 labels = dataset['train'].features['labels'].feature.names
 
@@ -149,7 +155,7 @@ def compute_metrics(p):
 args = TrainingArguments(
     output_dir="layoutxlm-finetuned-es_trunds", # name of directory to store the checkpoints
     overwrite_output_dir=True,
-    max_steps=10000, # we train for a maximum of 1,000 batches
+    max_steps=TOTAL_STEPS, # we train for a maximum of 1,000 batches
     warmup_ratio=0.1, # we warmup a bit
     # fp16=True, # we use mixed precision (less memory consumption)
     per_device_train_batch_size=2,
@@ -171,4 +177,4 @@ trainer = Trainer(
     compute_metrics=compute_metrics,
 )
 
-trainer.train()
+trainer.train(frequency_to_evaluate=F_TO_EVALUATE)

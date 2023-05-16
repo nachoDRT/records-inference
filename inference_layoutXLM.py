@@ -476,7 +476,7 @@ model.to(device)
 
 feature_extractor = LayoutLMv2FeatureExtractor(ocr_lang="spa")
 
-real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "test_set")
+real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "test_real_ffu")
 
 iter = 0
 font = cv2.FONT_HERSHEY_SIMPLEX
