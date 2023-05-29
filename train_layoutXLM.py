@@ -1,7 +1,15 @@
 import os
 import sys
 from pathlib import Path
-sys.path.append(os.path.join(str(Path(os.path.abspath(__file__)).parent.parent), "9_Transformers_Git", "transformers", "src"))
+
+sys.path.append(
+    os.path.join(
+        str(Path(os.path.abspath(__file__)).parent.parent),
+        "9_Transformers_Git",
+        "transformers",
+        "src",
+    )
+)
 
 
 from transformers import LayoutLMv2ForTokenClassification
@@ -24,27 +32,29 @@ from transformers import TrainingArguments, Trainer
 
 F_TO_EVALUATE = 250
 TOTAL_STEPS = 10000
+SAVE_STEPS = 1000
 
 torch.cuda.empty_cache()
 
 # Load dataset using a '.py' file
-py_file_path = os.path.join(os.path.dirname(os.getcwd()), '3_Datasets', 'xfunsd.py')
-dataset = load_dataset(py_file_path, 'xfun_es')
+py_file_path = os.path.join(os.path.dirname(os.getcwd()), "3_Datasets", "xfunsd.py")
+dataset = load_dataset(py_file_path, "xfun_es")
 dataset.shuffle()
 
-labels = dataset['train'].features['labels'].feature.names
+labels = dataset["train"].features["labels"].feature.names
 
-id2label = {k:v for k,v in enumerate(labels)}
-label2id = {v:k for k,v in enumerate(labels)}
+id2label = {k: v for k, v in enumerate(labels)}
+label2id = {v: k for k, v in enumerate(labels)}
 
 feature_extractor = LayoutLMv2FeatureExtractor(apply_ocr=False)
 tokenizer = LayoutXLMTokenizer.from_pretrained("microsoft/layoutxlm-base")
+
 
 @dataclass
 class DataCollatorForTokenClassification:
     """
     Data collator that will dynamically pad the inputs received, as well as the labels.
-    
+
     Args:
         tokenizer (:class:`~transformers.PreTrainedTokenizer` or :class:`~transformers.PreTrainedTokenizerFast`):
             The tokenizer used for encoding the data.
@@ -76,7 +86,9 @@ class DataCollatorForTokenClassification:
 
     def __call__(self, features):
         # prepare image input
-        image = self.feature_extractor([feature["original_image"] for feature in features], return_tensors="pt").pixel_values
+        image = self.feature_extractor(
+            [feature["original_image"] for feature in features], return_tensors="pt"
+        ).pixel_values
 
         # prepare text input
         for feature in features:
@@ -85,18 +97,19 @@ class DataCollatorForTokenClassification:
             del feature["original_image"]
             del feature["entities"]
             del feature["relations"]
-        
+
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
             max_length=self.max_length,
             pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors="pt"
+            return_tensors="pt",
         )
 
         batch["image"] = image
-            
+
         return batch
+
 
 data_collator = DataCollatorForTokenClassification(
     feature_extractor,
@@ -106,18 +119,19 @@ data_collator = DataCollatorForTokenClassification(
     max_length=512,
 )
 
-train_dataset = dataset['train']
-test_dataset = dataset['validation']
+train_dataset = dataset["train"]
+test_dataset = dataset["validation"]
 
 dataloader = DataLoader(train_dataset, batch_size=4, collate_fn=data_collator)
 
-model = LayoutLMv2ForTokenClassification.from_pretrained('microsoft/layoutxlm-base',
-                                                         id2label=id2label,
-                                                         label2id=label2id)
+model = LayoutLMv2ForTokenClassification.from_pretrained(
+    "microsoft/layoutxlm-base", id2label=id2label, label2id=label2id
+)
 
 # Metrics
 metric = load_metric("seqeval")
 return_entity_level_metrics = True
+
 
 def compute_metrics(p):
     predictions, labels = p
@@ -152,18 +166,19 @@ def compute_metrics(p):
             "accuracy": results["overall_accuracy"],
         }
 
+
 args = TrainingArguments(
-    output_dir="layoutxlm-finetuned-es_trunds", # name of directory to store the checkpoints
+    output_dir="layoutxlm-finetuned-es_trunds",  # name of directory to store the checkpoints
     overwrite_output_dir=True,
-    max_steps=TOTAL_STEPS, # we train for a maximum of 1,000 batches
-    warmup_ratio=0.1, # we warmup a bit
+    max_steps=TOTAL_STEPS,  # we train for a maximum of 1,000 batches
+    warmup_ratio=0.1,  # we warmup a bit
     # fp16=True, # we use mixed precision (less memory consumption)
     per_device_train_batch_size=2,
     per_device_eval_batch_size=2,
     learning_rate=1e-5,
     remove_unused_columns=False,
-    push_to_hub=False, # we'd like to push our model to the hub during training
-    save_steps=2500,
+    push_to_hub=False,  # we'd like to push our model to the hub during training
+    save_steps=SAVE_STEPS,
 )
 
 # Initialize our Trainer
