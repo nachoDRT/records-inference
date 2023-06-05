@@ -20,7 +20,6 @@ import torch
 import numpy as np
 import random
 import json
-from pathlib import Path
 import copy
 import re
 import requests
@@ -513,7 +512,7 @@ model.to(device)
 
 feature_extractor = LayoutLMv2FeatureExtractor(ocr_lang="spa")
 
-real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "test_set_retamar")
+real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "alberto")
 
 iter = 0
 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -601,8 +600,6 @@ for file in sorted(os.listdir(real_docs_path)):
             if tuple(sublist) not in new_list:
                 new_list.append(tuple(sublist))
             else:
-                print(index)
-                # true_predictions.pop(index)
                 indexes_to_remove.append(index)
 
         for index in reversed(indexes_to_remove):
@@ -613,15 +610,14 @@ for file in sorted(os.listdir(real_docs_path)):
 
         img = cv2.cvtColor(np.asarray(img), cv2.COLOR_BGR2RGB)
 
-        # draw = ImageDraw.Draw(img)
-        # font = ImageFont.load_default()
-
         grades_tags = []
         grades = []
         detected_subjects = []
         confidences = []
         lines_with_detected_subjects = []
 
+        # grades_tags_ultraprocessed = []
+        detected_subjects_ultraprocessed = []
         grades_ultraprocessed = []
         confidences_ultraprocessed = []
 
@@ -653,6 +649,7 @@ for file in sorted(os.listdir(real_docs_path)):
 
                     # Ultra process the grades, ie:
                     if grade >= 0 and grade <= 10:
+                        detected_subjects_ultraprocessed.append(predicted_label[:-7])
                         grades_ultraprocessed.append(grade)
                         confidences_ultraprocessed.append(conf[0][index])
 
@@ -682,12 +679,19 @@ for file in sorted(os.listdir(real_docs_path)):
             detected_subjects, grades_tags, grades, confidences, iter
         )
         grades_output_ultraprocessed = postprocess_outputs(
-            detected_subjects,
+            detected_subjects_ultraprocessed,
             grades_tags,
             grades_ultraprocessed,
             confidences_ultraprocessed,
             iter,
+            ultra=True,
         )
+
+        for grade in grades_output:
+            print(grade, grades_output[grade]["grade"])
+        print("")
+        for grade in grades_output_ultraprocessed:
+            print(grade, grades_output_ultraprocessed[grade]["grade"])
 
         if OBTAIN_METRICS:
             num_errors, num_gt_grades = check_ground_truth(
@@ -706,9 +710,9 @@ for file in sorted(os.listdir(real_docs_path)):
                     "File num.",
                     str(iter).zfill(4),
                     " ultra-processed errors: ",
-                    str(num_errors_ultraprocessed),
-                    "/",
-                    str(num_gt_grades),
+                    "".join(
+                        [str(num_errors_ultraprocessed), "/", str(num_gt_grades)]
+                    ).rjust(9),
                 ]
             )
             errors_string = "".join(
@@ -716,16 +720,12 @@ for file in sorted(os.listdir(real_docs_path)):
                     "File num.",
                     str(iter).zfill(4),
                     " errors: ",
-                    str(num_errors),
-                    "/",
-                    str(num_gt_grades),
+                    "".join([str(num_errors), "/", str(num_gt_grades)]).rjust(25),
                 ]
             )
-            # Modify both 'ultra_errors_string' and 'errors_string' to aligh both to the rigth
-            ultra_errors_string = ultra_errors_string.ljust(len(errors_string))
-            errors_string = errors_string.ljust(len(ultra_errors_string))
+
             print(errors_string)
-            print(ultra_errors_string)
+            print(ultra_errors_string, "\n")
 
             documents_stats.append(num_errors)
 
