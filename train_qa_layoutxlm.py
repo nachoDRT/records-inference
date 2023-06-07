@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 import cv2
+import torch
 
 sys.path.append(
     os.path.join(
@@ -16,9 +17,22 @@ sys.path.append(
     )
 )
 
-from datasets import Dataset
-from transformers import LayoutLMv2FeatureExtractor, AutoTokenizer
+from datasets import Dataset, Features, Sequence, Value, Array2D, Array3D
+from transformers import (
+    LayoutLMv2FeatureExtractor,
+    AutoTokenizer,
+    AutoModelForQuestionAnswering,
+    AdamW,
+    TrainingArguments,
+    Trainer,
+)
 from pathlib import Path
+
+SHOW_IMG = False
+NUM_SAMPLES = 25
+TOTAL_STEPS = 5000
+SAVE_STEPS = 1000
+F_TO_EVALUATE = 2
 
 
 def load_dataset_from_json():
@@ -35,10 +49,7 @@ def load_dataset_from_json():
 def load_dataset():
     data = load_dataset_from_json()
     df = pd.DataFrame(data["data"])
-    dataset = Dataset.from_pandas(df.iloc[:3])
-    print(data["data"])
-    print(data["data"].keys())
-    print(z)
+    dataset = Dataset.from_pandas(df.iloc[:NUM_SAMPLES])
 
     return dataset
 
@@ -106,12 +117,13 @@ def encode_dataset(dataset):
 
     for batch_index in range(len(answers)):
         print("")
+        # print("Palabras: \n", words[batch_index])
         print("Pregunta: \n", questions[batch_index])
-        print("Palabras: \n", words[batch_index])
         print("Respuesta: \n", answers[batch_index])
 
-        img = np.array(images[batch_index])
-        show_image(img, dataset["image_name"][batch_index])
+        if SHOW_IMG:
+            img = np.array(images[batch_index])
+            show_image(img, dataset["image_name"][batch_index])
 
         # Get the index position of the CLS token in the input_ids
         cls_index = encoding.input_ids[batch_index].index(tokenizer.cls_token_id)
@@ -166,6 +178,7 @@ def encode_dataset(dataset):
 
         else:
             print("No match found for answer:", answer)
+            print("-----------")
             start_positions.append(cls_index)
             end_positions.append(cls_index)
 
@@ -176,8 +189,105 @@ def encode_dataset(dataset):
     return encoding
 
 
+def define_features():
+    features = Features(
+        {
+            "input_ids": Sequence(feature=Value(dtype="int64")),
+            "bbox": Array2D(dtype="int64", shape=(512, 4)),
+            "attention_mask": Sequence(Value(dtype="int64")),
+            "token_type_ids": Sequence(Value(dtype="int64")),
+            "image": Array3D(dtype="int64", shape=(3, 224, 224)),
+            "start_positions": Value(dtype="int64"),
+            "end_positions": Value(dtype="int64"),
+        }
+    )
+
+    return features
+
+
+def create_data_loaders(dataloader):
+    encoded_dataset.set_format(type="torch")
+    dataloader = torch.utils.data.DataLoader(encoded_dataset, batch_size=2)
+
+    return dataloader
+
+
 if __name__ == "__main__":
     dataset = load_dataset()
     feature_extractor = LayoutLMv2FeatureExtractor()
-    dataset_with_ocr = dataset.map(get_ocr_words_and_boxes, batched=True, batch_size=3)
-    encode_dataset(dataset_with_ocr)
+    dataset_with_ocr = dataset.map(
+        get_ocr_words_and_boxes, batched=True, batch_size=NUM_SAMPLES
+    )
+    # encoding = encode_dataset(dataset_with_ocr)
+
+    features = define_features()
+    encoded_dataset = dataset_with_ocr.map(
+        encode_dataset,
+        batched=True,
+        batch_size=NUM_SAMPLES,
+        remove_columns=dataset_with_ocr.column_names,
+        features=features,
+    )
+
+    # dataloader = create_data_loaders(encoded_dataset)
+
+    model_checkpoint = "microsoft/layoutlmv2-base-uncased"
+    model = AutoModelForQuestionAnswering.from_pretrained(model_checkpoint)
+
+    optimizer = AdamW(model.parameters(), lr=5e-5)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+
+    args = TrainingArguments(
+        output_dir="qa_layoutxlm-finetuned-es_trunds",  # name of directory to store the checkpoints
+        overwrite_output_dir=True,
+        max_steps=TOTAL_STEPS,  # we train for a maximum of 1,000 batches
+        warmup_ratio=0.1,  # we warmup a bit
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        learning_rate=1e-5,
+        push_to_hub=False,  # we'd like to push our model to the hub during training
+        save_steps=SAVE_STEPS,
+    )
+
+    # Initialize our Trainer
+    trainer = Trainer(
+        model=model,
+        args=args,
+        train_dataset=encoded_dataset,
+        eval_dataset=encoded_dataset,
+    )
+
+    trainer.train(frequency_to_evaluate=F_TO_EVALUATE)
+
+    # model.train()
+
+    # for epoch in range(20):  # loop over the dataset multiple times
+    #     for idx, batch in enumerate(dataloader):
+    #         # get the inputs;
+    #         input_ids = batch["input_ids"].to(device)
+    #         attention_mask = batch["attention_mask"].to(device)
+    #         token_type_ids = batch["token_type_ids"].to(device)
+    #         bbox = batch["bbox"].to(device)
+    #         image = batch["image"].to(device)
+    #         start_positions = batch["start_positions"].to(device)
+    #         end_positions = batch["end_positions"].to(device)
+
+    #         # zero the parameter gradients
+    #         optimizer.zero_grad()
+
+    #         # forward + backward + optimize
+    #         outputs = model(
+    #             input_ids=input_ids,
+    #             attention_mask=attention_mask,
+    #             token_type_ids=token_type_ids,
+    #             bbox=bbox,
+    #             image=image,
+    #             start_positions=start_positions,
+    #             end_positions=end_positions,
+    #         )
+    #         loss = outputs.loss
+    #         print("Loss:", loss.item())
+    #         loss.backward()
+    #         optimizer.step()
