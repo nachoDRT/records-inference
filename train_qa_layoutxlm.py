@@ -29,15 +29,22 @@ from transformers import (
 from pathlib import Path
 
 SHOW_IMG = False
-NUM_SAMPLES = 25
+NUM_SAMPLES = 3
 TOTAL_STEPS = 5000
 SAVE_STEPS = 1000
-F_TO_EVALUATE = 2
+F_TO_EVALUATE = 500
+ADHOC_DATASET = True
+APPLY_OCR = False
+
+if ADHOC_DATASET:
+    docVQA = "docVQA_Grades"
+else:
+    docVQA = "docVQA"
 
 
 def load_dataset_from_json():
     json_dataset_file_path = os.path.join(
-        os.path.dirname(__file__), "docVQA", "train", "train_v1.0.json"
+        os.path.dirname(__file__), docVQA, "train", "train_v1.0.json"
     )
 
     with open(json_dataset_file_path) as f:
@@ -54,15 +61,25 @@ def load_dataset():
     return dataset
 
 
-def get_ocr_words_and_boxes(samples):
+def get_words_and_boxes(samples):
     images = [
         Image.open(
-            os.path.join(os.path.dirname(__file__), "docVQA", "train", image_file)
+            os.path.join(os.path.dirname(__file__), docVQA, "train", image_file)
         ).convert("RGB")
         for image_file in dataset["image"]
     ]
 
-    encoded_inputs = feature_extractor(images)
+    images_paths = [
+        os.path.join(
+            os.path.dirname(__file__),
+            docVQA,
+            "train",
+            "".join([image_file[:-4], ".json"]),
+        )
+        for image_file in dataset["image"]
+    ]
+
+    encoded_inputs = feature_extractor(images, images_paths=images_paths)
 
     samples["image"] = encoded_inputs.pixel_values
     samples["words"] = encoded_inputs.words
@@ -106,6 +123,8 @@ def encode_dataset(dataset):
     words = dataset["words"]
     boxes = dataset["boxes"]
     answers = dataset["answers"]
+    print(answers)
+
     images = dataset["image"]
 
     encoding = tokenizer(
@@ -128,6 +147,7 @@ def encode_dataset(dataset):
         # Get the index position of the CLS token in the input_ids
         cls_index = encoding.input_ids[batch_index].index(tokenizer.cls_token_id)
         words_dataset = [word.lower() for word in words[batch_index]]
+        print(words_dataset)
         for answer in answers[batch_index]:
             match, word_idx_start, word_idx_end = subfinder(
                 words_dataset, answer.lower().split()
@@ -214,27 +234,35 @@ def create_data_loaders(dataloader):
 
 if __name__ == "__main__":
     dataset = load_dataset()
-    feature_extractor = LayoutLMv2FeatureExtractor()
-    dataset_with_ocr = dataset.map(
-        get_ocr_words_and_boxes, batched=True, batch_size=NUM_SAMPLES
+
+    feature_extractor = LayoutLMv2FeatureExtractor(
+        apply_ocr=APPLY_OCR, qa_format=True, adhoc_dataset=ADHOC_DATASET
     )
-    # encoding = encode_dataset(dataset_with_ocr)
+
+    dataset_with_words = dataset.map(
+        get_words_and_boxes, batched=True, batch_size=NUM_SAMPLES
+    )
 
     features = define_features()
-    encoded_dataset = dataset_with_ocr.map(
+
+    encoded_dataset = dataset_with_words.map(
         encode_dataset,
         batched=True,
         batch_size=NUM_SAMPLES,
-        remove_columns=dataset_with_ocr.column_names,
+        remove_columns=dataset_with_words.column_names,
         features=features,
     )
 
+    print(encoded_dataset)
+    print(encoded_dataset.column_names)
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/layoutlmv2-base-uncased")
+    print(tokenizer.decode(encoded_dataset["input_ids"][0]))
     # dataloader = create_data_loaders(encoded_dataset)
 
     model_checkpoint = "microsoft/layoutlmv2-base-uncased"
     model = AutoModelForQuestionAnswering.from_pretrained(model_checkpoint)
 
-    optimizer = AdamW(model.parameters(), lr=5e-5)
+    # optimizer = AdamW(model.parameters(), lr=5e-5)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)

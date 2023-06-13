@@ -3,5 +3,6 @@
 !inference_layoutXLM.py
 !train_layoutXLM.py
 !train_qa_layoutxlm.py
+!inference_qa_layoutXLM.py
 !xfunsd.py
 !.gitignore
