@@ -31,7 +31,7 @@ import numpy as np
 from transformers import TrainingArguments, Trainer
 
 F_TO_EVALUATE = 250
-TOTAL_STEPS = 10000
+TOTAL_STEPS = 1000*10
 SAVE_STEPS = 1000
 
 torch.cuda.empty_cache()
@@ -179,6 +179,7 @@ args = TrainingArguments(
     remove_unused_columns=False,
     push_to_hub=False,  # we'd like to push our model to the hub during training
     save_steps=SAVE_STEPS,
+    save_total_limit = 1,
 )
 
 # Initialize our Trainer

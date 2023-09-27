@@ -29,9 +29,9 @@ from transformers import (
 from pathlib import Path
 
 SHOW_IMG = False
-NUM_SAMPLES = 3
-TOTAL_STEPS = 5000
-SAVE_STEPS = 1000
+NUM_SAMPLES = 2000
+TOTAL_STEPS = 10000
+SAVE_STEPS = 5000
 F_TO_EVALUATE = 500
 ADHOC_DATASET = True
 APPLY_OCR = False

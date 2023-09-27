@@ -23,10 +23,12 @@ import json
 import copy
 import re
 import requests
+import csv
 
 
 SHOW = False
 OCR_SPY = True
+WRITE_CSV_OUTPUT = True
 
 cwd_parent = Path(os.getcwd()).parent
 SUBJECTS_SEMANTIC_JSON = os.path.join(
@@ -81,6 +83,16 @@ def highlight_ocr_detections(
 
     cv2.imwrite(os.path.join(save_img_path, img_name), img=img)
 
+    if WRITE_CSV_OUTPUT:
+        
+        csv_name = os.path.join(save_img_path, "".join(["ocr_detection", str(iter), ".csv"]))
+        with open(csv_name, mode='w', newline='') as file:
+            writer = csv.writer(file)
+        
+            # Escribir cada palabra en una fila distinta
+            for word_i in words:
+                writer.writerow([word_i])
+
 
 def get_label_2_color():
     """Link a label to a color
@@ -100,7 +112,8 @@ def get_label_2_color():
         "question": (255, 102, 0),
         "answer": (102, 153, 51),
         "header": (0, 102, 255),
-        "other": (204, 0, 153),
+        # "other": (204, 0, 153),
+        "other": (100, 100, 100)
     }
     answers_list = []
     subjects_list = []
@@ -512,7 +525,7 @@ model.to(device)
 
 feature_extractor = LayoutLMv2FeatureExtractor(ocr_lang="spa")
 
-real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "alberto")
+real_docs_path = os.path.join(os.getcwd(), "inference_datasets", "A_10_test_real_sanpablo")
 
 iter = 0
 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -532,7 +545,11 @@ for file in sorted(os.listdir(real_docs_path)):
         # Get img to parse to OCR
 
         inputs = feature_extractor(
-            img, images_paths=img_path, ocr_azure=True, return_tensors="pt"
+            img,
+            images_paths=img_path,
+            ocr_azure=True,
+            return_tensors="pt",
+            token_classification=True,
         )
 
         words = inputs["words"]
@@ -625,6 +642,7 @@ for file in sorted(os.listdir(real_docs_path)):
             predicted_label = iob_to_label(prediction).lower()
             detection_line = get_line_id(line_2_bbox, box)
 
+            label_flag = False
             if (
                 predicted_label in answers_list
                 and detection_line not in lines_with_detected_subjects
@@ -640,6 +658,7 @@ for file in sorted(os.listdir(real_docs_path)):
 
                 # XXX This also ultra-process the model output (only floats allowed)
                 try:
+                    label_flag = True
                     grade = float(preprocessed)
                     grades_tags.append(predicted_label)
                     grades.append(grade)
@@ -654,17 +673,20 @@ for file in sorted(os.listdir(real_docs_path)):
                         confidences_ultraprocessed.append(conf[0][index])
 
                 except ValueError:
+                    label_flag = False
                     pass
 
             start_point = (int(box[0]), int(box[1]))
             end_point = (int(box[2]), int(box[3]))
-            text_xy = (int(box[0]) + 10, int(box[1]) - 10)
+            text_xy = (int(box[0]) + 10, int(box[1]) + 10)
 
             color = label2color[predicted_label]
             img = cv2.rectangle(img, start_point, end_point, color, 2)
-            img = cv2.putText(
-                img, predicted_label, text_xy, font, font_scale, color, 1, cv2.LINE_AA
-            )
+            
+            if label_flag:
+                img = cv2.putText(
+                    img, predicted_label, text_xy, font, font_scale, color, 1, cv2.LINE_AA
+                )
 
         save_results_path = os.path.join(os.getcwd(), "results")
 
